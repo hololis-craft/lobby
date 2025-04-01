@@ -1,0 +1,16 @@
+name: HolofansLobby
+version: '1.0-SNAPSHOT'
+main: me.f0reach.holofans.lobby.HolofansLobby
+api-version: '1.21'
+depend: [ NBTAPI ]
+commands:
+  lobby:
+    description: Teleport to the lobby
+    usage: /lobby
+  othello:
+    description: Minigame
+    usage: /othello
+permissions:
+  lobby.admin:
+    description: Teleport to the lobby
+    default: op

@@ -1,0 +1,19 @@
+lobbyWorld: lobby
+lobbyPos:
+  ==: Vector
+  x: 0.0
+  y: 0.0
+  z: 0.0
+lobbyYaw: 0.0
+othello:
+  world: "lobby"
+  pos1:
+    ==: Vector
+    x: 494.0
+    y: 30.0
+    z: 145.0
+  pos2:
+    ==: Vector
+    x: 508.0
+    y: 30.0
+    z: 159.0
