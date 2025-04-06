@@ -229,6 +229,24 @@ public class OthelloGame implements CommandExecutor, Listener {
             logic.nextTurn();
         }
 
+        checkOver();
+    }
+
+    // CPU
+    private void cpuTurn() {
+        if (hasTwoPlayers()) return;
+        var shouldRunCPU = players.size() == 1 && logic.getCurrentPlayer() != players.get(players.keySet().iterator().next());
+        if (!shouldRunCPU) return;
+
+        logic.nextByCPU();
+        nextTurn();
+
+        for (var p : players.keySet()) {
+            sendNotifyTurn(p);
+        }
+    }
+
+    private void checkOver() {
         if (logic.isGameOver()) {
             var winner = logic.getWinner();
             var message = winner == OthelloPlayer.BLACK ? "黒" : "白";
@@ -250,20 +268,6 @@ public class OthelloGame implements CommandExecutor, Listener {
             }
             players.clear();
             firstPlaced = false;
-        }
-    }
-
-    // CPU
-    private void cpuTurn() {
-        if (hasTwoPlayers()) return;
-        var shouldRunCPU = players.size() == 1 && logic.getCurrentPlayer() != players.get(players.keySet().iterator().next());
-        if (!shouldRunCPU) return;
-
-        logic.nextByCPU();
-        nextTurn();
-
-        for (var p : players.keySet()) {
-            sendNotifyTurn(p);
         }
     }
 
