@@ -23,6 +23,8 @@ public final class HolofansLobby extends JavaPlugin implements CommandExecutor, 
         getCommand("lobby").setExecutor(this);
         lobbyCommand = new LobbyCommand(this);
         othelloGame = new OthelloGame(this);
+
+        reloadConfig();
     }
 
     @Override
@@ -40,7 +42,9 @@ public final class HolofansLobby extends JavaPlugin implements CommandExecutor, 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String @NotNull [] args) {
         // lobby command
-        lobbyCommand.onCommand(sender, command, label, args);
+        if (lobbyCommand.onCommand(sender, command, label, args)) {
+            return true;
+        }
 
         // reload
         if (sender instanceof Player player) {
