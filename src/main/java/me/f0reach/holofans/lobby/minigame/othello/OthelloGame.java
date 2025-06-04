@@ -48,6 +48,10 @@ public class OthelloGame implements CommandExecutor, Listener {
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::checkExit, 0, 20 * 5);
     }
 
+    public void reloadConfig() {
+        config.load();
+    }
+
     private boolean hasTwoPlayers() {
         return players.size() == 2;
     }
