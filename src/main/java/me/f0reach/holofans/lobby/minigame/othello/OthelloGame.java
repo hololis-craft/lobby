@@ -2,6 +2,7 @@ package me.f0reach.holofans.lobby.minigame.othello;
 
 import io.papermc.paper.block.BlockPredicate;
 import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.ItemAdventurePredicate;
 import io.papermc.paper.registry.RegistryKey;
 import io.papermc.paper.registry.keys.BlockTypeKeys;
 import io.papermc.paper.registry.set.RegistrySet;
@@ -178,17 +179,11 @@ public class OthelloGame implements CommandExecutor, Listener {
             meta.lore(List.of(Component.text(diskName)));
             meta.setEnchantmentGlintOverride(true);
         });
-        itemStack.getData(DataComponentTypes.CAN_PLACE_ON)
-                .predicates().add(
-                        BlockPredicate.predicate()
-                                .blocks(
-                                        RegistrySet.keySet(
-                                                RegistryKey.BLOCK,
-                                                BlockTypeKeys.GREEN_CONCRETE
-                                        )
-                                )
-                                .build()
-                );
+        final var blockPredicate = BlockPredicate.predicate()
+                .blocks(RegistrySet.keySet(RegistryKey.BLOCK, BlockTypeKeys.GREEN_CONCRETE))
+                .build();
+        final var canPlaceOn = ItemAdventurePredicate.itemAdventurePredicate().addPredicate(blockPredicate);
+        itemStack.setData(DataComponentTypes.CAN_PLACE_ON, canPlaceOn);
         return itemStack;
     }
 
