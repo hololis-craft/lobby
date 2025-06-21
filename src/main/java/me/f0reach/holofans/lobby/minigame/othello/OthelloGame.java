@@ -1,6 +1,10 @@
 package me.f0reach.holofans.lobby.minigame.othello;
 
-import de.tr7zw.nbtapi.NBT;
+import io.papermc.paper.block.BlockPredicate;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.registry.RegistryKey;
+import io.papermc.paper.registry.keys.BlockTypeKeys;
+import io.papermc.paper.registry.set.RegistrySet;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -37,6 +41,7 @@ public class OthelloGame implements CommandExecutor, Listener {
 
     private static final Material BLACK_DISK = Material.BLACK_CARPET;
     private static final Material WHITE_DISK = Material.WHITE_CARPET;
+    private static final Material PLACABLE_BLOCK = Material.GREEN_CONCRETE;
 
     public OthelloGame(Plugin plugin) {
         this.plugin = plugin;
@@ -173,13 +178,17 @@ public class OthelloGame implements CommandExecutor, Listener {
             meta.lore(List.of(Component.text(diskName)));
             meta.setEnchantmentGlintOverride(true);
         });
-        NBT.modifyComponents(itemStack, nbt -> {
-            // Can be placed on concrete
-            var predicates = nbt.getOrCreateCompound("minecraft:can_place_on")
-                    .getCompoundList("predicates");
-            predicates.addCompound().setString("blocks", "minecraft:green_concrete");
-            // predicates.addCompound().setString("blocks", "minecraft:lime_terracotta");
-        });
+        itemStack.getData(DataComponentTypes.CAN_PLACE_ON)
+                .predicates().add(
+                        BlockPredicate.predicate()
+                                .blocks(
+                                        RegistrySet.keySet(
+                                                RegistryKey.BLOCK,
+                                                BlockTypeKeys.GREEN_CONCRETE
+                                        )
+                                )
+                                .build()
+                );
         return itemStack;
     }
 

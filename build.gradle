@@ -28,7 +28,6 @@ repositories {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
-    compileOnly("de.tr7zw:item-nbt-api-plugin:2.14.1")
     compileOnly("de.oliver:FancyNpcs:2.5.1")
     compileOnly("net.luckperms:api:5.4")
 }
