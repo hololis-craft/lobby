@@ -35,8 +35,12 @@ public final class HolofansLobby extends JavaPlugin implements CommandExecutor, 
     @Override
     public void reloadConfig() {
         super.reloadConfig();
-        lobbyCommand.reloadConfig();
-        othelloGame.reloadConfig();
+        if (lobbyCommand != null) {
+            lobbyCommand.reloadConfig();
+        }
+        if (othelloGame != null) {
+            othelloGame.reloadConfig();
+        }
     }
 
     @Override

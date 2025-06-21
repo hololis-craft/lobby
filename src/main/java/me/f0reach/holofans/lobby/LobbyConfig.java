@@ -23,7 +23,7 @@ public class LobbyConfig {
             lobbyYaw = plugin.getConfig().getDouble("lobbyYaw");
             teleportDelay = plugin.getConfig().getInt("teleportDelay");
         } catch (Exception e) {
-            plugin.getLogger().severe("Failed to reload lobby location from config");
+            plugin.getLogger().severe("Failed to reload lobby location from config " + e.getMessage());
         }
     }
 
