@@ -17,3 +17,16 @@ othello:
     x: 508.0
     y: 30.0
     z: 159.0
+
+gomoku:
+  world: "lobby"
+  pos1:
+    ==: Vector
+    x: 523.0
+    y: 30.0
+    z: -8.0
+  pos2:
+    ==: Vector
+    x: 523.0
+    y: 62.0
+    z: 24.0

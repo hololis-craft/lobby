@@ -2,7 +2,7 @@ name: HolofansLobby
 version: '1.0-SNAPSHOT'
 main: me.f0reach.holofans.lobby.HolofansLobby
 api-version: '1.21'
-depend: [ NBTAPI ]
+depend: [ ]
 commands:
   lobby:
     description: Teleport to the lobby
@@ -10,6 +10,9 @@ commands:
   othello:
     description: Minigame
     usage: /othello
+  gomoku:
+    description: Minigame
+    usage: /gomoku
 permissions:
   lobby.admin:
     description: Teleport to the lobby

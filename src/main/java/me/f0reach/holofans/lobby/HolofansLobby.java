@@ -1,5 +1,6 @@
 package me.f0reach.holofans.lobby;
 
+import me.f0reach.holofans.lobby.minigame.gomoku.GomokuGame;
 import me.f0reach.holofans.lobby.minigame.othello.OthelloGame;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -14,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 public final class HolofansLobby extends JavaPlugin implements CommandExecutor, Listener {
     private LobbyCommand lobbyCommand;
     private OthelloGame othelloGame;
+    private GomokuGame gomokuGame;
 
     @Override
     public void onEnable() {
@@ -23,6 +25,7 @@ public final class HolofansLobby extends JavaPlugin implements CommandExecutor, 
         getCommand("lobby").setExecutor(this);
         lobbyCommand = new LobbyCommand(this);
         othelloGame = new OthelloGame(this);
+        gomokuGame = new GomokuGame(this);
 
         reloadConfig();
     }
@@ -40,6 +43,9 @@ public final class HolofansLobby extends JavaPlugin implements CommandExecutor, 
         }
         if (othelloGame != null) {
             othelloGame.reloadConfig();
+        }
+        if (gomokuGame != null) {
+            gomokuGame.reloadConfig();
         }
     }
 
