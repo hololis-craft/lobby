@@ -3,6 +3,8 @@ package me.f0reach.holofans.lobby.minigame.gomoku;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.title.Title;
+import org.bukkit.Color;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.command.Command;
@@ -12,7 +14,11 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.plugin.Plugin;
@@ -20,10 +26,9 @@ import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
+import org.joml.Vector2i;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class GomokuGame implements CommandExecutor, Listener {
@@ -33,18 +38,25 @@ public class GomokuGame implements CommandExecutor, Listener {
     private final GomokuRenderer gridRenderer;
 
     private final Material BOARD_MATERIAL = Material.BROWN_CONCRETE;
-    private final Material EMPTY_MATERIAL = Material.GLASS;
+    private final Material EMPTY_MATERIAL = Material.AIR;
     private final Material BLACK_MATERIAL = Material.BLACK_WOOL;
     private final Material WHITE_MATERIAL = Material.WHITE_WOOL;
-
-    private final List<Player> players;
+    private final double ITEM_OFFSET = 0.05; // アイテムの高さオフセット
 
     private World world;
+
+    // 一時的な変数
+    private final List<Player> players;
+    private Vector gridBase;
+    private double gridSpacing;
+    private BoundingBox boardRayTracingBox;
+    private final Map<Player, ItemDisplay> placementDisplay;
 
     public GomokuGame(Plugin plugin) {
         this.plugin = plugin;
         this.config = new GomokuConfig(plugin);
         this.players = new ArrayList<>();
+        this.placementDisplay = new HashMap<>();
 
         // Register command executor
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
@@ -54,6 +66,9 @@ public class GomokuGame implements CommandExecutor, Listener {
         this.gridRenderer = new GomokuRenderer();
 
         reloadConfig();
+
+        // タイマーを設定して定期的にonTickを呼び出す
+        plugin.getServer().getScheduler().runTaskTimer(plugin, this::onPeriod, 0L, 2L);
     }
 
     public void reloadConfig() {
@@ -120,7 +135,7 @@ public class GomokuGame implements CommandExecutor, Listener {
     }
 
     private void sendGuide(Player player) {
-        player.sendMessage(Component.text("盤面の置きたい部分を向くと、候補のパーティクルが表示されます。", TextColor.color(0xFFFFFF)));
+        player.sendMessage(Component.text("盤面の置きたい部分を向くと、候補が表示されます。", TextColor.color(0xFFFFFF)));
         player.sendMessage(Component.text("その状態で、右クリック・使用すると石を置けます。", TextColor.color(0xFFFFFF)));
         player.sendMessage(Component.text("石を置くと、次のプレイヤーに手番が移ります。", TextColor.color(0xFFFFFF)));
         player.sendMessage(Component.text("禁じ手はありません。", TextColor.color(0xFFFFFF)));
@@ -146,7 +161,9 @@ public class GomokuGame implements CommandExecutor, Listener {
     private void resetGame() {
         logic.resetGame();
         players.clear();
-        // renderBoard();
+
+        placementDisplay.values().forEach(Entity::remove);
+        placementDisplay.clear();
     }
 
     private void stopGame() {
@@ -155,6 +172,7 @@ public class GomokuGame implements CommandExecutor, Listener {
         }
 
         for (Player player : players) {
+            if (!player.isOnline()) continue;
             player.sendMessage(Component.text("ゲームが終了しました。", TextColor.color(0xFFFFFF)));
         }
 
@@ -176,9 +194,9 @@ public class GomokuGame implements CommandExecutor, Listener {
         var posMin = config.getPosMin();
         var posMax = config.getPosMax();
 
-        var gridBase = posMin.clone().add(new Vector(0, 1, 0));
+        gridBase = posMin.clone().add(new Vector(0, 1, 0));
         var gridBlockCount = posMax.getBlockX() - posMin.getBlockX() + 1;
-        double gridSpacing = gridBlockCount / (config.getBoardSize() + 1.0);
+        gridSpacing = gridBlockCount / (config.getBoardSize() + 1.0);
 
         for (int x = posMin.getBlockX(); x <= posMax.getBlockX(); x++) {
             for (int z = posMin.getBlockZ(); z <= posMax.getBlockZ(); z++) {
@@ -249,22 +267,183 @@ public class GomokuGame implements CommandExecutor, Listener {
             }
         }
 
-        // 配置可能なポイントのアイテムフレームを設置
+        // レイキャスト用のボックスを設定
+        var gridEnd = gridBase.clone().add(new Vector(gridBlockCount, ITEM_OFFSET, gridBlockCount));
+        boardRayTracingBox = BoundingBox.of(gridBase, gridEnd);
 
+        renderStone();
+    }
+
+    private Location getStoneLocation(int x, int z) {
+        return gridBase.clone()
+                .add(new Vector((x + 1) * gridSpacing, ITEM_OFFSET, (z + 1) * gridSpacing))
+                .toLocation(world);
+    }
+
+    private Vector2i getGridIndex(Vector location) {
+        int xIndex = (int) Math.round(((location.getX() - gridBase.getX()) / gridSpacing)) - 1;
+        int zIndex = (int) Math.round(((location.getZ() - gridBase.getZ()) / gridSpacing)) - 1;
+
+        return new Vector2i(xIndex, zIndex);
+    }
+
+    private void renderStone() {
         double itemSize = gridSpacing * 0.5;
-        double itemOffset = 0.05; // アイテムの高さオフセット
         var mat = new Matrix4f().scale((float) itemSize, 0.1F, (float) itemSize);
-        for (int i = 1; i <= config.getBoardSize(); i++) {
-            for (int j = 1; j <= config.getBoardSize(); j++) {
-                var pos = gridBase.clone()
-                        .add(new Vector(i * gridSpacing, itemOffset, j * gridSpacing));
-                world.spawn(pos.toLocation(world), ItemDisplay.class, itemDisplay -> {
-                    itemDisplay.setItemStack(ItemStack.of(EMPTY_MATERIAL));
-                    itemDisplay.setTransformationMatrix(mat);
-                    itemDisplay.setPersistent(true);
-                    itemDisplay.setVisibleByDefault(true);
-                });
+        // 盤面のレンダリングを行う
+        for (int x = 0; x < config.getBoardSize(); x++) {
+            for (int z = 0; z < config.getBoardSize(); z++) {
+                var pos = getStoneLocation(x, z);
+                var itemDisplay = world.getNearbyEntities(pos, itemSize, itemSize, itemSize)
+                        .stream()
+                        .filter(entity -> entity instanceof ItemDisplay)
+                        .map(entity -> (ItemDisplay) entity)
+                        .findFirst()
+                        .orElse(null);
+
+                if (itemDisplay == null) {
+                    // アイテムディスプレイが存在しない場合は新規作成
+                    itemDisplay = world.spawn(pos, ItemDisplay.class, display -> {
+                        display.setTransformationMatrix(mat);
+                    });
+                }
+
+                switch (logic.getStone(x, z)) {
+                    case 1 -> itemDisplay.setItemStack(ItemStack.of(BLACK_MATERIAL));
+                    case 2 -> itemDisplay.setItemStack(ItemStack.of(WHITE_MATERIAL));
+                    default -> itemDisplay.setItemStack(ItemStack.of(EMPTY_MATERIAL));
+                }
             }
         }
+    }
+
+    private void renderPlacementDisplay(Player player) {
+        if (!logic.isGameStarted() || logic.isGameOver()) return;
+        var playerIndex = players.indexOf(player);
+        if (playerIndex != logic.getCurrentPlayer() - 1) return;
+        if (boardRayTracingBox == null) return;
+
+        var rayTraceResult = boardRayTracingBox.rayTrace(
+                player.getEyeLocation().toVector(),
+                player.getEyeLocation().getDirection(),
+                10.0
+        );
+
+        if (rayTraceResult == null) {
+            return; // レイキャストがヒットしなかった場合は何もしない
+        }
+
+        var gridIndex = getGridIndex(rayTraceResult.getHitPosition());
+        if (gridIndex.x() < 0 || gridIndex.x() >= config.getBoardSize() ||
+                gridIndex.y() < 0 || gridIndex.y() >= config.getBoardSize()) {
+            return; // 範囲外の座標は無視
+        }
+
+        var stonePosition = getStoneLocation(gridIndex.x(), gridIndex.y());
+
+        // アイテムディスプレイを取得または作成
+        ItemDisplay display = placementDisplay.get(player);
+        if (display == null) {
+            display = world.spawn(stonePosition, ItemDisplay.class, itemDisplay -> {
+                double itemSize = gridSpacing * 0.7;
+                var mat = new Matrix4f().scale((float) itemSize, 0.1F, (float) itemSize);
+                itemDisplay.setVisibleByDefault(false);
+                itemDisplay.setPersistent(false);
+                itemDisplay.setTransformationMatrix(mat);
+                itemDisplay.setGlowColorOverride(Color.ORANGE);
+            });
+            placementDisplay.put(player, display);
+            player.showEntity(this.plugin, display);
+        }
+
+        // アイテムディスプレイの位置を更新
+        display.teleport(stonePosition);
+        display.setGlowing(true);
+        // アイテムディスプレイのアイテムを設定
+        if (logic.getStone(gridIndex.x(), gridIndex.y()) != 0) {
+            display.setGlowing(false);
+            display.setItemStack(ItemStack.of(EMPTY_MATERIAL));
+        } else {
+            if (logic.getCurrentPlayer() == 1) {
+                display.setItemStack(ItemStack.of(BLACK_MATERIAL));
+            } else {
+                display.setItemStack(ItemStack.of(WHITE_MATERIAL));
+            }
+        }
+    }
+
+    private void onPeriod() {
+        // プレイヤーごとに配置表示を更新
+        for (Player player : players) {
+            if (!player.isOnline() || !player.getWorld().equals(world)) {
+                // オフラインまたは異なるワールドの場合は終了
+                stopGame();
+                return;
+            }
+            renderPlacementDisplay(player);
+        }
+    }
+
+    private void handlePlaceStone(Player player) {
+        if (!logic.isGameStarted() || logic.isGameOver()) {
+            return;
+        }
+
+        var rayTraceResult = boardRayTracingBox.rayTrace(
+                player.getEyeLocation().toVector(),
+                player.getEyeLocation().getDirection(),
+                10.0
+        );
+
+        if (rayTraceResult == null) {
+            return; // レイキャストがヒットしなかった場合は無視
+        }
+
+        var gridIndex = getGridIndex(rayTraceResult.getHitPosition());
+        var playerIndex = players.indexOf(player);
+
+        if (playerIndex < 0 || playerIndex != logic.getCurrentPlayer() - 1) {
+            player.sendActionBar(Component.text("あなたの手番ではありません。", TextColor.color(0xFF0000)));
+            return; // プレイヤーの手番でない場合は無視
+        }
+
+        // 石を置く処理
+        if (!logic.placeStone(gridIndex.x(), gridIndex.y())) {
+            player.sendActionBar(Component.text("そこには石を置くことができません。", TextColor.color(0xFF0000)));
+            return; // 石を置けない場合は無視
+        }
+
+        // 石を置いた後、描画を更新
+        renderStone();
+
+        // placementDisplayを見えないように
+        var display = placementDisplay.get(player);
+        if (display != null) {
+            display.setItemStack(ItemStack.of(EMPTY_MATERIAL));
+            display.setGlowing(false);
+        }
+    }
+
+    @EventHandler
+    private void onUse(PlayerInteractEvent event) {
+        var player = event.getPlayer();
+        if (!players.contains(player) || !logic.isGameStarted() || logic.isGameOver()) {
+            return; // ゲームが開始されていない、または終了している場合は何もしない
+        }
+
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            // 右クリックで石を置く
+            handlePlaceStone(player);
+        }
+    }
+
+    @EventHandler
+    private void onInteract(PlayerInteractEntityEvent event) {
+        var player = event.getPlayer();
+        if (!players.contains(player) || !logic.isGameStarted() || logic.isGameOver()) {
+            return; // ゲームが開始されていない、または終了している場合は何もしない
+        }
+
+        handlePlaceStone(player);
     }
 }
