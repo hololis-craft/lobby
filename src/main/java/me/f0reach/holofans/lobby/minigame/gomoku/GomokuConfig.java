@@ -1,24 +1,21 @@
 package me.f0reach.holofans.lobby.minigame.gomoku;
 
 import org.bukkit.plugin.Plugin;
-import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 
 public class GomokuConfig {
     private final Plugin plugin;
+
+    // 設定ファイルに基づく変数
     private String world;
     private Vector posMin, posMax;
-    private BoundingBox boardArea;
-    private BoundingBox playableArea;
-    private Vector direction1, direction2;
-    private Vector rayTraceOffset;
     private int boardSize;
     private boolean isValid;
 
     public GomokuConfig(Plugin plugin) {
         this.plugin = plugin;
         this.isValid = false;
-        this.boardSize = 15;
+        this.boardSize = 19;
         load();
     }
 
@@ -45,45 +42,23 @@ public class GomokuConfig {
                 Math.max(pos1Raw.getY(), pos2Raw.getY()),
                 Math.max(pos1Raw.getZ(), pos2Raw.getZ())).toBlockVector();
 
-
-        var board = posMax.clone().subtract(posMin);
-        if (board.getBlockX() == 0) {
-            direction1 = new Vector(0, 0, 1);
-            direction2 = new Vector(0, 1, 0);
-        } else if (board.getBlockZ() == 0) {
-            direction1 = new Vector(1, 0, 0);
-            direction2 = new Vector(0, 1, 0);
-        } else if (board.getBlockY() == 0) {
-            direction1 = new Vector(1, 0, 0);
-            direction2 = new Vector(0, 0, 1);
-        } else {
-            plugin.getLogger().warning("Gomoku positions must be aligned to axes");
+        // Y座標は同じでないといけない
+        if (posMin.getY() != posMax.getY()) {
+            plugin.getLogger().warning("Gomoku positions must have the same Y coordinate.");
             return;
         }
 
-        boardArea = BoundingBox.of(posMin, posMax.clone().add(direction1).add(direction2));
-
-        if (!setBoardSize(board)) {
-            plugin.getLogger().warning("Gomoku board size must be aligned to axes");
+        // X,Zの大きさは同じでないといけない
+        if (posMax.getX() - posMin.getX() != posMax.getZ() - posMin.getZ()) {
+            plugin.getLogger().warning("Gomoku positions must have the same X and Z size.");
             return;
         }
 
-        var playableArea1 = section.getVector("playableArea1");
-        var playableArea2 = section.getVector("playableArea2");
-        if (posMin == null || posMax == null || playableArea1 == null || playableArea2 == null) {
-            plugin.getLogger().warning("Gomoku positions not set in config");
-            return;
-        }
+        boardSize = section.getInt("boardSize");
 
-        playableArea = BoundingBox.of(playableArea1, playableArea2);
-        if (!playableArea.contains(posMin) || !playableArea.contains(posMax)) {
-            plugin.getLogger().warning("Gomoku playable area must contain the board positions");
-            return;
-        }
-
-        rayTraceOffset = section.getVector("rayTraceOffset");
-        if (rayTraceOffset == null) {
-            rayTraceOffset = new Vector(0, 0, 0);
+        if (boardSize < 5) {
+            plugin.getLogger().warning("Invalid gomoku board size: " + boardSize + ". Using default size 19.");
+            boardSize = 19;
         }
 
         this.isValid = true;
@@ -91,28 +66,8 @@ public class GomokuConfig {
         plugin.getLogger().info("Gomoku board size: " + boardSize);
     }
 
-    private boolean setBoardSize(Vector boardSize) {
-        this.boardSize = (Math.max(boardSize.getBlockX(), Math.max(boardSize.getBlockY(), boardSize.getBlockZ())) / 2) + 1;
-        var xValid = boardSize.getBlockX() == 0 && boardSize.getBlockY() == boardSize.getBlockZ();
-        var yValid = boardSize.getBlockY() == 0 && boardSize.getBlockX() == boardSize.getBlockZ();
-        var zValid = boardSize.getBlockZ() == 0 && boardSize.getBlockX() == boardSize.getBlockY();
-        if (!xValid && !yValid && !zValid) {
-            plugin.getLogger().warning("Gomoku board size must be aligned to axes");
-            return false;
-        }
-        return true;
-    }
-
     public boolean isValid() {
         return isValid;
-    }
-
-    public BoundingBox getPlayableArea() {
-        return playableArea;
-    }
-
-    public Vector getRayTraceOffset() {
-        return rayTraceOffset;
     }
 
     public String getWorld() {
@@ -125,18 +80,6 @@ public class GomokuConfig {
 
     public Vector getPosMax() {
         return posMax;
-    }
-
-    public BoundingBox getBoardArea() {
-        return boardArea;
-    }
-
-    public Vector getDirection1() {
-        return direction1;
-    }
-
-    public Vector getDirection2() {
-        return direction2;
     }
 
     public int getBoardSize() {

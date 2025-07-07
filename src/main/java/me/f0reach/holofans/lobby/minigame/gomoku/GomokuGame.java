@@ -4,17 +4,22 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Material;
-import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ItemDisplay;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
-import org.joml.Vector2i;
+import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,8 +30,10 @@ public class GomokuGame implements CommandExecutor, Listener {
     private GomokuLogic logic;
     private final GomokuConfig config;
     private final Plugin plugin;
+    private final GomokuRenderer gridRenderer;
 
-    private final Material EMPTY_MATERIAL = Material.BARRIER;
+    private final Material BOARD_MATERIAL = Material.BROWN_CONCRETE;
+    private final Material EMPTY_MATERIAL = Material.GLASS;
     private final Material BLACK_MATERIAL = Material.BLACK_WOOL;
     private final Material WHITE_MATERIAL = Material.WHITE_WOOL;
 
@@ -38,33 +45,32 @@ public class GomokuGame implements CommandExecutor, Listener {
         this.plugin = plugin;
         this.config = new GomokuConfig(plugin);
         this.players = new ArrayList<>();
-        if (!config.isValid()) {
-            plugin.getLogger().severe("Gomoku configuration is invalid. Please check your config.yml.");
-            return;
-        }
 
         // Register command executor
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         Objects.requireNonNull(plugin.getServer().getPluginCommand("gomoku")).setExecutor(this);
 
-        this.world = plugin.getServer().getWorld(config.getWorld());
-        if (world == null) {
-            plugin.getLogger().warning("World not found: " + config.getWorld());
-            return;
-        }
-
         this.logic = new GomokuLogic(config.getBoardSize());
+        this.gridRenderer = new GomokuRenderer();
 
-        plugin.getServer().getScheduler().runTaskTimer(plugin, this::onFiveTick, 0L, 5L);
+        reloadConfig();
     }
 
     public void reloadConfig() {
+        if (!players.isEmpty()) {
+            stopGame();
+        }
+
         config.load();
         if (!config.isValid()) {
             plugin.getLogger().severe("Gomoku configuration is invalid. Please check your config.yml.");
             return;
         }
         this.world = plugin.getServer().getWorld(config.getWorld());
+        this.logic = new GomokuLogic(config.getBoardSize());
+        this.players.clear();
+
+        plugin.getLogger().info("Gomoku configuration reloaded successfully.");
     }
 
     @Override
@@ -89,33 +95,14 @@ public class GomokuGame implements CommandExecutor, Listener {
         return false;
     }
 
-    private Vector toPosition(Vector2i position) {
-        return config.getPosMin().clone()
-                .add(config.getDirection1().clone().multiply(position.x() * 2))
-                .add(config.getDirection2().clone().multiply(position.y() * 2));
-    }
-
-    private void renderBoard() {
-        var world = plugin.getServer().getWorld(config.getWorld());
-        if (world == null) {
-            plugin.getLogger().warning("World not found: " + config.getWorld());
-            return;
-        }
-
-        for (int x = 0; x < config.getBoardSize(); x++) {
-            for (int z = 0; z < config.getBoardSize(); z++) {
-                var cell = logic.getStone(x, z);
-                var blockMaterial = switch (cell) {
-                    case 1 -> BLACK_MATERIAL;
-                    case 2 -> WHITE_MATERIAL;
-                    default -> Material.AIR;
-                };
-                var position = toPosition(new Vector2i(x, z));
-
-                var block = world.getBlockAt(position.toLocation(world));
-                block.setType(blockMaterial);
-            }
-        }
+    private List<Player> getVisitingPlayers() {
+        var center = config.getPosMin().clone()
+                .add(config.getPosMax().clone())
+                .multiply(0.5);
+        var playableArea = BoundingBox.of(center, 15, 15, 15);
+        return world.getPlayers().stream()
+                .filter(player -> playableArea.contains(player.getLocation().toVector()))
+                .collect(Collectors.toList());
     }
 
     private void sendGameStartMessage() {
@@ -127,11 +114,7 @@ public class GomokuGame implements CommandExecutor, Listener {
                 Component.text(playerVs)
         );
 
-        var titlePlayers = world.getPlayers().stream()
-                .filter(player -> config.getPlayableArea().contains(
-                        player.getLocation().toVector()))
-                .toList();
-        for (Player player : titlePlayers) {
+        for (Player player : getVisitingPlayers()) {
             player.showTitle(title);
         }
     }
@@ -153,104 +136,135 @@ public class GomokuGame implements CommandExecutor, Listener {
             return;
         }
 
+        logic.startGame();
+
         sendGuide(p);
         sendGameStartMessage();
-        renderBoard();
+        prepareBoard();
     }
 
     private void resetGame() {
         logic.resetGame();
         players.clear();
-        renderBoard();
+        // renderBoard();
     }
 
     private void stopGame() {
-        logic.resetGame();
-        players.clear();
-        for (Player player : world.getPlayers()) {
-            if (config.getPlayableArea().contains(player.getLocation().toVector())) {
-                player.sendMessage(Component.text("五目並べが終了されました", TextColor.color(0xFFFFFF)));
-            }
+        for (Player player : getVisitingPlayers()) {
+            player.sendMessage(Component.text("五目並べが終了されました", TextColor.color(0xFFFFFF)));
         }
 
         for (Player player : players) {
             player.sendMessage(Component.text("ゲームが終了しました。", TextColor.color(0xFFFFFF)));
         }
+
+        resetGame();
     }
 
-    private Vector2i getNearestBoardPositionFromBlock(Vector vec) {
-        if (!vec.isInAABB(config.getPosMin(), config.getPosMax())) return null;
-
-        var pos = vec.clone().subtract(config.getPosMin());
-        if (pos.lengthSquared() == 0) {
-            return new Vector2i(0, 0);
+    /* 盤面の構造
+     * - posMin, posMaxで盤面の土台となるブロック座標が指定される
+     * - 盤面の模様（格子）は土台の直上のitem_frameに描画される
+     * - 配置可能なポイントは、格子上の各点にある、scaleが変更されたitem_frameに描画される
+     */
+    private void prepareBoard() {
+        if (world == null) {
+            plugin.getLogger().warning("World is not set. Cannot prepare board.");
+            return;
         }
 
-        var x = (int) Math.round(pos.dot(config.getDirection1()) / config.getDirection1().lengthSquared() / 2.0);
-        var z = (int) Math.round(pos.dot(config.getDirection2()) / config.getDirection2().lengthSquared() / 2.0);
+        // 盤面の土台を設置
+        var posMin = config.getPosMin();
+        var posMax = config.getPosMax();
 
-        if (x < 0 || x >= config.getBoardSize() || z < 0 || z >= config.getBoardSize()) {
-            return null; // 範囲外
+        var gridBase = posMin.clone().add(new Vector(0, 1, 0));
+        var gridBlockCount = posMax.getBlockX() - posMin.getBlockX() + 1;
+        double gridSpacing = gridBlockCount / (config.getBoardSize() + 1.0);
+
+        for (int x = posMin.getBlockX(); x <= posMax.getBlockX(); x++) {
+            for (int z = posMin.getBlockZ(); z <= posMax.getBlockZ(); z++) {
+                world.getBlockAt(x, posMin.getBlockY(), z).setType(BOARD_MATERIAL);
+            }
         }
 
-        return new Vector2i(x, z);
-    }
+        // 既存のItemDisplayを削除
+        var boundingBox = BoundingBox.of(posMin, posMax).expand(1, 2, 1);
+        world.getNearbyEntities(boundingBox).stream()
+                .filter(entity -> entity instanceof ItemDisplay)
+                .forEach(Entity::remove);
 
-    private Vector2i getNearestBoardPositionFromPlayer(Player player) {
-        var eyeLocation = player.getEyeLocation();
-        var offsetedArea = config.getBoardArea().clone()
-                .shift(config.getRayTraceOffset());
-        var rayTrace = offsetedArea.rayTrace(
-                eyeLocation.toVector(),
-                eyeLocation.getDirection(),
-                100);
+        // アイテムフレーム用地図の準備
+        gridRenderer.setImageSize(128 * gridBlockCount);
+        gridRenderer.setGridCount(config.getBoardSize());
+        gridRenderer.createBoardImage();
 
-        if (rayTrace == null) return null;
+        // 格子のアイテムフレームを設置
+        for (int x = 0; x < gridBlockCount; x++) {
+            for (int z = 0; z < gridBlockCount; z++) {
+                // アイテムフレームの位置を計算
+                var location = gridBase.clone()
+                        .add(new Vector(x + 0.5, 0, z + 0.5))
+                        .toLocation(world);
+                // アイテムフレームを取得
+                var itemFrame = world.getNearbyEntities(location, 0.1, 0.1, 0.1)
+                        .stream()
+                        .filter(entity -> entity instanceof ItemFrame)
+                        .map(entity -> (ItemFrame) entity)
+                        .findFirst()
+                        .orElse(null);
 
-        var position = rayTrace.getHitPosition().subtract(config.getRayTraceOffset());
-        return getNearestBoardPositionFromBlock(position);
-    }
-
-    private void spawnBlockParticle(Vector2i position, Player p) {
-        var blockPosition = toPosition(position);
-        // ブロックを囲うように8点のパーティクルを生成
-        for (int dx = 0; dx <= 1; dx++) {
-            for (int dy = 0; dy <= 1; dy++) {
-                for (int dz = 0; dz <= 1; dz++) {
-                    var begin = blockPosition.clone().add(new Vector(dx, dy, dz)).toLocation(world);
-                    var xVec = dx == 0 ? 0.5 : -0.5;
-                    var yVec = dy == 0 ? 0.5 : -0.5;
-                    var zVec = dz == 0 ? 0.5 : -0.5;
-                    p.spawnParticle(Particle.REVERSE_PORTAL,
-                            begin,
-                            0, xVec, 0, 0, 0.05, null, true);
-                    p.spawnParticle(Particle.REVERSE_PORTAL,
-                            begin,
-                            0, 0, yVec, 0, 0.05, null, true);
-                    p.spawnParticle(Particle.REVERSE_PORTAL,
-                            begin,
-                            0, 0, 0, zVec, 0.05, null, true);
+                // アイテムフレームが存在し、地図が設定されている場合は再利用
+                if (itemFrame != null && itemFrame.getItem().getType() == Material.FILLED_MAP) {
+                    // 既存のアイテムフレームを再利用
+                    itemFrame.setVisibleByDefault(true);
+                    itemFrame.setFixed(true);
+                } else {
+                    // アイテムフレームが存在しない場合は新規作成
+                    itemFrame = world.spawn(location, ItemFrame.class, frame -> {
+                        frame.setVisibleByDefault(true);
+                        frame.setFixed(true);
+                        frame.setItemDropChance(0.0F);
+                    });
+                    var mapItem = ItemStack.of(Material.FILLED_MAP, 1);
+                    // アイテムフレームに地図を設定
+                    itemFrame.setItem(mapItem);
                 }
+
+                // アイテムフレームに設定された地図を確認
+                var mapMeta = (MapMeta) itemFrame.getItem().getItemMeta();
+
+                if (!mapMeta.hasMapView()) {
+                    // 空の地図を作成
+                    var emptyMapView = plugin.getServer().createMap(world);
+                    mapMeta.setMapView(emptyMapView);
+                }
+
+                var mapView = Objects.requireNonNull(mapMeta.getMapView());
+                // 地図のレンダラを指定
+                mapView.getRenderers().forEach(mapView::removeRenderer);
+                mapView.addRenderer(gridRenderer.createMapRenderer(x, z));
+                // 地図をアイテムとしての地図に設定
+
+                // アイテムに地図設定を書き戻す
+                itemFrame.getItem().setItemMeta(mapMeta);
             }
         }
 
-        // 中心にブロックのパーティクルを生成
-        var center = blockPosition.clone().add(new Vector(0.5, 0.5, 0.5)).toLocation(world);
-        p.spawnParticle(Particle.COMPOSTER, center, 10,
-                0.2, 0.2, 0.2, 0.05, null, true);
-    }
+        // 配置可能なポイントのアイテムフレームを設置
 
-    private void onFiveTick() {
-        for (Player player : players) {
-            if (!player.isOnline() ||
-                    !config.getPlayableArea().contains(player.getLocation().toVector())) {
-                stopGame();
-                break;
+        double itemSize = gridSpacing * 0.5;
+        double itemOffset = 0.05; // アイテムの高さオフセット
+        var mat = new Matrix4f().scale((float) itemSize, 0.1F, (float) itemSize);
+        for (int i = 1; i <= config.getBoardSize(); i++) {
+            for (int j = 1; j <= config.getBoardSize(); j++) {
+                var pos = gridBase.clone()
+                        .add(new Vector(i * gridSpacing, itemOffset, j * gridSpacing));
+                world.spawn(pos.toLocation(world), ItemDisplay.class, itemDisplay -> {
+                    itemDisplay.setItemStack(ItemStack.of(EMPTY_MATERIAL));
+                    itemDisplay.setTransformationMatrix(mat);
+                    itemDisplay.setPersistent(true);
+                    itemDisplay.setVisibleByDefault(true);
+                });
             }
-
-            var position = getNearestBoardPositionFromPlayer(player);
-            if (position == null) continue;
-            spawnBlockParticle(position, player);
         }
     }
 }

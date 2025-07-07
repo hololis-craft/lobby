@@ -174,7 +174,7 @@ public class GomokuLogic {
                 board[y][x] = 0; // 全てのセルを空にする
             }
         }
-        currentPlayer = 1; // プレイヤーから開始
+        currentPlayer = 0; // プレイヤーから開始
         isGameOver = false;
         winner = 0; // 勝者なし
     }

@@ -6,6 +6,9 @@ import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.*;
+import java.awt.image.BufferedImage;
+
 public class GomokuMapRenderer extends MapRenderer {
     private final GomokuRenderer parent;
     private final int offsetX;
@@ -25,7 +28,14 @@ public class GomokuMapRenderer extends MapRenderer {
             return; // 画像がまだ生成されていない場合は何もしない
         }
 
+        // offsetに合わせて切り取る
+        var partImage = new BufferedImage(128, 128, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = partImage.createGraphics();
+        g.drawImage(image, 0, 0, 128, 128,
+                offsetX * 128, offsetY * 128, offsetX * 128 + 128, offsetY * 128 + 128, null);
+        g.dispose();
+
         // 盤面の画像を描画
-        canvas.drawImage(offsetX, offsetY, image);
+        canvas.drawImage(0, 0, partImage);
     }
 }
