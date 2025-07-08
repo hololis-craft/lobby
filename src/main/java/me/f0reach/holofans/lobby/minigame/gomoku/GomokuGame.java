@@ -36,6 +36,7 @@ public class GomokuGame implements CommandExecutor, Listener {
     private final GomokuConfig config;
     private final Plugin plugin;
     private final GomokuRenderer gridRenderer;
+    private SimpleCpu cpu;
 
     private final Material BOARD_MATERIAL = Material.BROWN_CONCRETE;
     private final Material EMPTY_MATERIAL = Material.AIR;
@@ -50,6 +51,7 @@ public class GomokuGame implements CommandExecutor, Listener {
     private Vector gridBase;
     private double gridSpacing;
     private BoundingBox boardRayTracingBox;
+    private BoundingBox playableArea;
     private final Map<Player, ItemDisplay> placementDisplay;
 
     public GomokuGame(Plugin plugin) {
@@ -63,6 +65,7 @@ public class GomokuGame implements CommandExecutor, Listener {
         Objects.requireNonNull(plugin.getServer().getPluginCommand("gomoku")).setExecutor(this);
 
         this.logic = new GomokuLogic(config.getBoardSize());
+        this.cpu = new SimpleCpu(logic, 2);
         this.gridRenderer = new GomokuRenderer();
 
         reloadConfig();
@@ -83,6 +86,7 @@ public class GomokuGame implements CommandExecutor, Listener {
         }
         this.world = plugin.getServer().getWorld(config.getWorld());
         this.logic = new GomokuLogic(config.getBoardSize());
+        this.cpu = new SimpleCpu(logic, 2);
         this.players.clear();
 
         plugin.getLogger().info("Gomoku configuration reloaded successfully.");
@@ -111,10 +115,6 @@ public class GomokuGame implements CommandExecutor, Listener {
     }
 
     private List<Player> getVisitingPlayers() {
-        var center = config.getPosMin().clone()
-                .add(config.getPosMax().clone())
-                .multiply(0.5);
-        var playableArea = BoundingBox.of(center, 15, 15, 15);
         return world.getPlayers().stream()
                 .filter(player -> playableArea.contains(player.getLocation().toVector()))
                 .collect(Collectors.toList());
@@ -139,6 +139,7 @@ public class GomokuGame implements CommandExecutor, Listener {
         player.sendMessage(Component.text("その状態で、右クリック・使用すると石を置けます。", TextColor.color(0xFFFFFF)));
         player.sendMessage(Component.text("石を置くと、次のプレイヤーに手番が移ります。", TextColor.color(0xFFFFFF)));
         player.sendMessage(Component.text("禁じ手はありません。", TextColor.color(0xFFFFFF)));
+        player.sendMessage(Component.text("二人目のプレイヤーは最初に石を置くまでにゲームに参加している必要があります。", TextColor.color(0xFFF2BC)));
     }
 
     private void startGame(Player p) {
@@ -150,8 +151,6 @@ public class GomokuGame implements CommandExecutor, Listener {
             p.sendMessage("すでにゲームが進行しています。");
             return;
         }
-
-        logic.startGame();
 
         sendGuide(p);
         sendGameStartMessage();
@@ -271,6 +270,9 @@ public class GomokuGame implements CommandExecutor, Listener {
         var gridEnd = gridBase.clone().add(new Vector(gridBlockCount, ITEM_OFFSET, gridBlockCount));
         boardRayTracingBox = BoundingBox.of(gridBase, gridEnd);
 
+        var center = gridBase.clone().add(new Vector(gridBlockCount / 2.0, 0, gridBlockCount / 2.0));
+        playableArea = BoundingBox.of(center, 25, 25, 25);
+
         renderStone();
     }
 
@@ -318,9 +320,9 @@ public class GomokuGame implements CommandExecutor, Listener {
     }
 
     private void renderPlacementDisplay(Player player) {
-        if (!logic.isGameStarted() || logic.isGameOver()) return;
+        if (logic.isGameOver()) return;
         var playerIndex = players.indexOf(player);
-        if (playerIndex != logic.getCurrentPlayer() - 1) return;
+        if (logic.isGameStarted() && playerIndex != logic.getCurrentPlayer() - 1) return;
         if (boardRayTracingBox == null) return;
 
         var rayTraceResult = boardRayTracingBox.rayTrace(
@@ -364,7 +366,7 @@ public class GomokuGame implements CommandExecutor, Listener {
             display.setGlowing(false);
             display.setItemStack(ItemStack.of(EMPTY_MATERIAL));
         } else {
-            if (logic.getCurrentPlayer() == 1) {
+            if (playerIndex == 0) {
                 display.setItemStack(ItemStack.of(BLACK_MATERIAL));
             } else {
                 display.setItemStack(ItemStack.of(WHITE_MATERIAL));
@@ -375,7 +377,8 @@ public class GomokuGame implements CommandExecutor, Listener {
     private void onPeriod() {
         // プレイヤーごとに配置表示を更新
         for (Player player : players) {
-            if (!player.isOnline() || !player.getWorld().equals(world)) {
+            if (!player.isOnline() || !player.getWorld().equals(world)
+                    || !playableArea.contains(player.getLocation().toVector())) {
                 // オフラインまたは異なるワールドの場合は終了
                 stopGame();
                 return;
@@ -384,11 +387,90 @@ public class GomokuGame implements CommandExecutor, Listener {
         }
     }
 
-    private void handlePlaceStone(Player player) {
-        if (!logic.isGameStarted() || logic.isGameOver()) {
-            return;
+    private void checkWinner() {
+        if (!logic.isGameOver()) {
+            return; // ゲームが終了していない場合は何もしない
         }
 
+        var winner = logic.getWinner();
+        if (winner == 3) {
+            // 勝者なし（引き分け）
+            for (Player player : getVisitingPlayers()) {
+                player.sendMessage(Component.text("ゲームは引き分けです。", TextColor.color(0xFFFFFF)));
+            }
+        } else {
+            // 勝者あり
+            var winnerPlayerName = players.size() == 1 && winner == 2
+                    ? "CPU"
+                    : players.get(winner - 1).getName();
+
+            for (Player player : getVisitingPlayers()) {
+                player.sendMessage(
+                        Component.text(
+                                winnerPlayerName + "の勝利！",
+                                TextColor.color(0xFFFFFF))
+                );
+            }
+        }
+
+        // プレイヤーに送信
+        var winnerPlayer = players.size() == 1 && winner == 2 ? null : players.get(winner - 1);
+        if (winnerPlayer != null) {
+            winnerPlayer.showTitle(
+                    Title.title(
+                            Component.text("勝利！", TextColor.color(0xFFFF00)),
+                            Component.text("おめでとうございます！", TextColor.color(0xFFFFFF))
+                    )
+            );
+        }
+
+        var loserPlayers = players.stream()
+                .filter(player -> player != winnerPlayer)
+                .toList();
+        for (Player loser : loserPlayers) {
+            loser.showTitle(
+                    Title.title(
+                            Component.text("敗北", TextColor.color(0xFF0000)),
+                            Component.text("次は頑張りましょう！", TextColor.color(0xFFFFFF))
+                    )
+            );
+        }
+
+        resetGame();
+    }
+
+    private void showTurn() {
+        if (!logic.isGameStarted() || logic.isGameOver()) {
+            return; // ゲームが開始されていない、または終了している場合は何もしない
+        }
+
+        var currentPlayerIndex = logic.getCurrentPlayer() - 1;
+        if (players.size() <= currentPlayerIndex) return;
+
+        var currentPlayer = players.get(currentPlayerIndex);
+        currentPlayer.sendActionBar(
+                Component.text("あなたの手番です。", TextColor.color(0x00FF00))
+        );
+    }
+
+    private void updateCpu() {
+        if (!logic.isGameStarted() || logic.isGameOver()) {
+            return; // ゲームが開始されていない、または終了している場合は何もしない
+        }
+
+        if (logic.getCurrentPlayer() == 2 && players.size() == 1) {
+            // CPUの手番
+            var move = cpu.findBestMove();
+            if (move != null) {
+                logic.placeStone(move[0], move[1]);
+                renderStone();
+                checkWinner();
+                showTurn();
+            }
+        }
+    }
+
+    private void handlePlaceStone(Player player) {
         var rayTraceResult = boardRayTracingBox.rayTrace(
                 player.getEyeLocation().toVector(),
                 player.getEyeLocation().getDirection(),
@@ -402,8 +484,11 @@ public class GomokuGame implements CommandExecutor, Listener {
         var gridIndex = getGridIndex(rayTraceResult.getHitPosition());
         var playerIndex = players.indexOf(player);
 
+        if (!logic.isGameStarted()) {
+            logic.startGame();
+        }
+
         if (playerIndex < 0 || playerIndex != logic.getCurrentPlayer() - 1) {
-            player.sendActionBar(Component.text("あなたの手番ではありません。", TextColor.color(0xFF0000)));
             return; // プレイヤーの手番でない場合は無視
         }
 
@@ -422,12 +507,21 @@ public class GomokuGame implements CommandExecutor, Listener {
             display.setItemStack(ItemStack.of(EMPTY_MATERIAL));
             display.setGlowing(false);
         }
+
+        // 次のプレイヤーに手番が移ったことを案内
+        showTurn();
+        checkWinner();
+
+        // CPUの手番を更新
+        if (logic.getCurrentPlayer() == 2 && players.size() == 1) {
+            plugin.getServer().getScheduler().runTaskLater(plugin, this::updateCpu, 20L); // 1秒後にCPUの手番を更新
+        }
     }
 
     @EventHandler
     private void onUse(PlayerInteractEvent event) {
         var player = event.getPlayer();
-        if (!players.contains(player) || !logic.isGameStarted() || logic.isGameOver()) {
+        if (!players.contains(player) || logic.isGameOver()) {
             return; // ゲームが開始されていない、または終了している場合は何もしない
         }
 
@@ -440,7 +534,7 @@ public class GomokuGame implements CommandExecutor, Listener {
     @EventHandler
     private void onInteract(PlayerInteractEntityEvent event) {
         var player = event.getPlayer();
-        if (!players.contains(player) || !logic.isGameStarted() || logic.isGameOver()) {
+        if (!players.contains(player) || logic.isGameOver()) {
             return; // ゲームが開始されていない、または終了している場合は何もしない
         }
 

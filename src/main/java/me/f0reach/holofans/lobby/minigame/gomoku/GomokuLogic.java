@@ -41,6 +41,15 @@ public class GomokuLogic {
     }
 
     /**
+     * 盤面の大きさを取得する
+     *
+     * @return 盤面のサイズ (NxN)
+     */
+    public int getBoardSize() {
+        return board.length;
+    }
+
+    /**
      * 現在の手番のプレイヤーを取得する
      *
      * @return 1: プレイヤー, 2: CPU
