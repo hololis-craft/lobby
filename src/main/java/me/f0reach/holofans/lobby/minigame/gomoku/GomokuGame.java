@@ -227,13 +227,14 @@ public class GomokuGame implements CommandExecutor, Listener {
                 // アイテムフレームを取得
                 var itemFrame = world.getNearbyEntities(location, 0.1, 0.1, 0.1)
                         .stream()
-                        .filter(entity -> entity instanceof ItemFrame)
+                        .filter(entity -> entity.isValid() && entity instanceof ItemFrame)
                         .map(entity -> (ItemFrame) entity)
                         .findFirst()
                         .orElse(null);
 
                 // アイテムフレームが存在し、地図が設定されている場合は再利用
-                if (itemFrame != null && itemFrame.getItem().getType() == Material.FILLED_MAP
+                if (itemFrame != null
+                        && itemFrame.getItem().getType() == Material.FILLED_MAP
                         && ((MapMeta) itemFrame.getItem().getItemMeta()).hasMapView()) {
                     // 既存のアイテムフレームを再利用
                     itemFrame.setVisibleByDefault(true);
@@ -304,7 +305,7 @@ public class GomokuGame implements CommandExecutor, Listener {
                 var pos = getStoneLocation(x, z);
                 var itemDisplay = world.getNearbyEntities(pos, itemSize, itemSize, itemSize)
                         .stream()
-                        .filter(entity -> entity instanceof ItemDisplay)
+                        .filter(entity -> entity.isValid() && entity instanceof ItemDisplay)
                         .map(entity -> (ItemDisplay) entity)
                         .findFirst()
                         .orElse(null);
@@ -351,7 +352,7 @@ public class GomokuGame implements CommandExecutor, Listener {
 
         // アイテムディスプレイを取得または作成
         ItemDisplay display = placementDisplay.get(player);
-        if (display == null) {
+        if (display == null || !display.isValid()) {
             display = world.spawn(stonePosition, ItemDisplay.class, itemDisplay -> {
                 double itemSize = gridSpacing * 0.7;
                 var mat = new Matrix4f().scale((float) itemSize, 0.1F, (float) itemSize);
@@ -361,8 +362,9 @@ public class GomokuGame implements CommandExecutor, Listener {
                 itemDisplay.setGlowColorOverride(Color.ORANGE);
             });
             placementDisplay.put(player, display);
-            player.showEntity(this.plugin, display);
         }
+
+        player.showEntity(this.plugin, display);
 
         // アイテムディスプレイの位置を更新
         display.teleport(stonePosition);
