@@ -115,6 +115,9 @@ public class GomokuGame implements CommandExecutor, Listener {
     }
 
     private List<Player> getVisitingPlayers() {
+        if (world == null || playableArea == null) {
+            return Collections.emptyList(); // ワールドが設定されていない場合は空のリストを返す
+        }
         return world.getPlayers().stream()
                 .filter(player -> playableArea.contains(player.getLocation().toVector()))
                 .collect(Collectors.toList());
@@ -230,7 +233,8 @@ public class GomokuGame implements CommandExecutor, Listener {
                         .orElse(null);
 
                 // アイテムフレームが存在し、地図が設定されている場合は再利用
-                if (itemFrame != null && itemFrame.getItem().getType() == Material.FILLED_MAP) {
+                if (itemFrame != null && itemFrame.getItem().getType() == Material.FILLED_MAP
+                        && ((MapMeta) itemFrame.getItem().getItemMeta()).hasMapView()) {
                     // 既存のアイテムフレームを再利用
                     itemFrame.setVisibleByDefault(true);
                     itemFrame.setFixed(true);
@@ -242,6 +246,10 @@ public class GomokuGame implements CommandExecutor, Listener {
                         frame.setItemDropChance(0.0F);
                     });
                     var mapItem = ItemStack.of(Material.FILLED_MAP, 1);
+                    var mapMeta = (MapMeta) mapItem.getItemMeta();
+                    var emptyMapView = plugin.getServer().createMap(world);
+                    mapMeta.setMapView(emptyMapView);
+                    mapItem.setItemMeta(mapMeta);
                     // アイテムフレームに地図を設定
                     itemFrame.setItem(mapItem);
                 }
@@ -250,9 +258,7 @@ public class GomokuGame implements CommandExecutor, Listener {
                 var mapMeta = (MapMeta) itemFrame.getItem().getItemMeta();
 
                 if (!mapMeta.hasMapView()) {
-                    // 空の地図を作成
-                    var emptyMapView = plugin.getServer().createMap(world);
-                    mapMeta.setMapView(emptyMapView);
+                    throw new IllegalStateException("ItemFrame does not have a map view set.");
                 }
 
                 var mapView = Objects.requireNonNull(mapMeta.getMapView());
@@ -375,6 +381,9 @@ public class GomokuGame implements CommandExecutor, Listener {
     }
 
     private void onPeriod() {
+        if (world == null || !config.isValid() || playableArea == null) {
+            return;
+        }
         // プレイヤーごとに配置表示を更新
         for (Player player : players) {
             if (!player.isOnline() || !player.getWorld().equals(world)
