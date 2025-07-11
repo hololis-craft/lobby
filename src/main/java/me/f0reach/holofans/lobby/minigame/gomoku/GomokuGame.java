@@ -307,6 +307,7 @@ public class GomokuGame implements CommandExecutor, Listener {
                         .stream()
                         .filter(entity -> entity.isValid() && entity instanceof ItemDisplay)
                         .map(entity -> (ItemDisplay) entity)
+                        .filter(entity -> !placementDisplay.containsValue(entity))
                         .findFirst()
                         .orElse(null);
 
