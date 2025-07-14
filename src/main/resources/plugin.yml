@@ -3,6 +3,8 @@ version: '1.0-SNAPSHOT'
 main: me.f0reach.holofans.lobby.HolofansLobby
 api-version: '1.21'
 depend: [ ]
+softdepend:
+  - Vault
 commands:
   lobby:
     description: Teleport to the lobby

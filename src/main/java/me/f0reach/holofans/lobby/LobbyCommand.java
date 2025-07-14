@@ -3,6 +3,7 @@ package me.f0reach.holofans.lobby;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
+import net.milkbowl.vault2.economy.Economy;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -14,13 +15,14 @@ import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.jetbrains.annotations.NotNull;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.UUID;
 
 public class LobbyCommand implements CommandExecutor, Listener {
     private final HolofansLobby plugin;
     private final LobbyConfig config;
-
+    private Economy economy;
 
     private final HashMap<UUID, Integer> pendingTeleports = new HashMap<>();
 
@@ -29,6 +31,17 @@ public class LobbyCommand implements CommandExecutor, Listener {
         this.config = new LobbyConfig(plugin);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+
+        if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
+            var vault = plugin.getServer().getServicesManager().getRegistration(Economy.class);
+            if (vault != null) {
+                economy = vault.getProvider();
+            } else {
+                plugin.getLogger().warning("Vault economy provider not found");
+            }
+        } else {
+            plugin.getLogger().warning("Vault plugin not found, economy features will be disabled");
+        }
     }
 
     public void reloadConfig() {
@@ -53,7 +66,34 @@ public class LobbyCommand implements CommandExecutor, Listener {
 
                 if (world == player.getWorld()) {
                     player.sendMessage("もうロビーにいます");
+
+                    var location = config.getLobbyLocation().toLocation(world);
+                    location.setYaw((float) config.getLobbyYaw());
+                    player.teleport(location);
+
                     return true;
+                }
+
+                if (config.getLobbyPrice() > 0 && economy != null) {
+                    // Check if player has enough money
+                    var price = BigDecimal.valueOf(config.getLobbyPrice());
+                    if (!economy.has(plugin.getName(), player.getUniqueId(), price)) {
+                        player.sendMessage("ロビーに移動するには " + config.getLobbyPrice() + " 円が必要です");
+                        return true;
+                    }
+
+                    // Deduct money
+                    try {
+                        var result = economy.withdraw(plugin.getName(), player.getUniqueId(), price);
+                        if (!result.transactionSuccess()) {
+                            player.sendMessage("ロビーに移動するための料金の引き落としに失敗しました");
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().severe("Failed to withdraw money from player " + player.getName() + ": " + e.getMessage());
+                        player.sendMessage("ロビーに移動するための料金の引き落としに失敗しました");
+                        return true;
+                    }
                 }
 
                 pendingTeleports.put(player.getUniqueId(), config.getTeleportDelay());

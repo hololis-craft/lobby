@@ -30,6 +30,7 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.7-R0.1-SNAPSHOT")
     compileOnly("de.oliver:FancyNpcs:2.5.1")
     compileOnly("net.luckperms:api:5.4")
+    compileOnly("net.milkbowl.vault:VaultUnlockedAPI:2.11")
 }
 
 def targetJavaVersion = 21
