@@ -93,13 +93,14 @@ public class LobbyCommand implements CommandExecutor, Listener {
                 var price = calculateLobbyPrice(player);
                 if (price.intValue() > 0 && economy != null) {
                     // Check if player has enough money
-                    var name = economy.defaultCurrencyNamePlural(plugin.getName());
+                    var currency = economy.getDefaultCurrency(plugin.getName());
+                    var formattedPrice = economy.format(plugin.getName(), price, currency);
                     if (!economy.has(plugin.getName(), player.getUniqueId(), price)) {
                         player.sendMessage(
                                 Component
                                         .text("ロビーに移動するには")
                                         .append(
-                                                Component.text(config.getLobbyPrice() + name, NamedTextColor.AQUA),
+                                                Component.text(formattedPrice, NamedTextColor.AQUA),
                                                 Component.text("が必要です")
                                         )
                         );
