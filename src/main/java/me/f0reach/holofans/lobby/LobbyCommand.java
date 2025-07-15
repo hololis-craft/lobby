@@ -2,6 +2,7 @@ package me.f0reach.holofans.lobby;
 
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.title.Title;
 import net.milkbowl.vault2.economy.Economy;
 import org.bukkit.command.Command;
@@ -94,7 +95,14 @@ public class LobbyCommand implements CommandExecutor, Listener {
                     // Check if player has enough money
                     var name = economy.defaultCurrencyNamePlural(plugin.getName());
                     if (!economy.has(plugin.getName(), player.getUniqueId(), price)) {
-                        player.sendMessage("ロビーに移動するには " + config.getLobbyPrice() + name + "が必要です");
+                        player.sendMessage(
+                                Component
+                                        .text("ロビーに移動するには")
+                                        .append(
+                                                Component.text(config.getLobbyPrice() + name, NamedTextColor.AQUA),
+                                                Component.text("が必要です")
+                                        )
+                        );
                         return true;
                     }
 
@@ -102,12 +110,18 @@ public class LobbyCommand implements CommandExecutor, Listener {
                     try {
                         var result = economy.withdraw(plugin.getName(), player.getUniqueId(), price);
                         if (!result.transactionSuccess()) {
-                            player.sendMessage("ロビーに移動するための料金の引き落としに失敗しました");
+                            player.sendMessage(Component.text(
+                                    "ロビーに移動するための料金の引き落としに失敗しました",
+                                    NamedTextColor.RED)
+                            );
                             return true;
                         }
                     } catch (Exception e) {
                         plugin.getLogger().severe("Failed to withdraw money from player " + player.getName() + ": " + e.getMessage());
-                        player.sendMessage("ロビーに移動するための料金の引き落としに失敗しました");
+                        player.sendMessage(Component.text(
+                                "ロビーに移動するための料金の引き落としに失敗しました",
+                                NamedTextColor.RED)
+                        );
                         return true;
                     }
                 }
