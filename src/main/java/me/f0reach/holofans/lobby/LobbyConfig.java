@@ -11,6 +11,8 @@ public class LobbyConfig {
     private double lobbyYaw = 0;
     private int teleportDelay = 20 * 3;
     private double lobbyPrice = 0.0;
+    private boolean lobbyDynamicPrice = false;
+    private double lobbyPricePerBlock = 0.0;
 
     public LobbyConfig(HolofansLobby plugin) {
         this.plugin = plugin;
@@ -24,6 +26,8 @@ public class LobbyConfig {
             lobbyYaw = plugin.getConfig().getDouble("lobbyYaw");
             teleportDelay = plugin.getConfig().getInt("teleportDelay", 20 * 3);
             lobbyPrice = plugin.getConfig().getDouble("lobbyPrice", 0.0);
+            lobbyDynamicPrice = plugin.getConfig().getBoolean("lobbyDynamicPrice", false);
+            lobbyPricePerBlock = plugin.getConfig().getDouble("lobbyPricePerBlock", 0.0);
         } catch (Exception e) {
             plugin.getLogger().severe("Failed to reload lobby location from config " + e.getMessage());
         }
@@ -47,5 +51,13 @@ public class LobbyConfig {
 
     public double getLobbyPrice() {
         return lobbyPrice;
+    }
+
+    public boolean isLobbyDynamicPrice() {
+        return lobbyDynamicPrice;
+    }
+
+    public double getLobbyPricePerBlock() {
+        return lobbyPricePerBlock;
     }
 }

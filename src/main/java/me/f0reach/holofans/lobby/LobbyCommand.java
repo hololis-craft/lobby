@@ -48,6 +48,21 @@ public class LobbyCommand implements CommandExecutor, Listener {
         config.reloadConfig();
     }
 
+    private BigDecimal calculateLobbyPrice(Player player) {
+        if (!config.isLobbyDynamicPrice() || economy == null) {
+            return BigDecimal.valueOf(config.getLobbyPrice());
+        }
+
+        // Calculate distance from spawn location
+        var playerLocation = player.getLocation();
+        var spawnLocation = player.getWorld().getSpawnLocation();
+        double distance = playerLocation.distance(spawnLocation);
+
+        // Calculate price based on distance
+        double price = config.getLobbyPrice() + (distance * config.getLobbyPricePerBlock());
+        return BigDecimal.valueOf(Math.ceil(price)); // Ensure price is rounded up
+    }
+
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String @NotNull [] args) {
         // lobby command
@@ -74,11 +89,12 @@ public class LobbyCommand implements CommandExecutor, Listener {
                     return true;
                 }
 
-                if (config.getLobbyPrice() > 0 && economy != null) {
+                var price = calculateLobbyPrice(player);
+                if (price.intValue() > 0 && economy != null) {
                     // Check if player has enough money
-                    var price = BigDecimal.valueOf(config.getLobbyPrice());
+                    var name = economy.defaultCurrencyNamePlural(plugin.getName());
                     if (!economy.has(plugin.getName(), player.getUniqueId(), price)) {
-                        player.sendMessage("ロビーに移動するには " + config.getLobbyPrice() + " 円が必要です");
+                        player.sendMessage("ロビーに移動するには " + config.getLobbyPrice() + name + "が必要です");
                         return true;
                     }
 
